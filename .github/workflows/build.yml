@@ -1,7 +1,12 @@
 name: Build mdview (Windows)
 
 on:
-  workflow_dispatch: # 支持手动触发: Actions 页面点 "Run workflow"
+  workflow_dispatch: # 手动触发: Actions 页面点 "Run workflow" 可勾选是否打包安装程序
+    inputs:
+      build_installer:
+        description: "同时打包 NSIS 安装程序(默认仅 exe,最快)"
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -38,7 +43,8 @@ jobs:
           iwr -useb https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.ps1 | iex
           cargo binstall tauri-cli --no-confirm --version "2.*"
 
-      - name: 打包 NSIS 安装程序
+      - name: 打包 NSIS 安装程序 (可选)
+        if: ${{ inputs.build_installer == 'true' }}
         working-directory: src-tauri
         run: cargo tauri build
 
