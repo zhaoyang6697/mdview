@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<!--
+  浏览器预览版(无需 Rust/编译)
+  双击本文件即可在 Chrome 打开,验证渲染效果。
+  与最终 Tauri 应用的唯一区别:文件读取用 FileReader(浏览器)而非 read_md_file(Rust)。
+  其他完全一致:同样的样式、vendor 库、渲染流水线。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>mdview 浏览器预览</title>
+  <link rel="stylesheet" href="src/styles.css" />
+  <link rel="stylesheet" href="src/vendor/katex.min.css" />
+</head>
+<body>
+  <div id="placeholder">
+    <h1>mdview 浏览器预览</h1>
+    <p>把 .md 文件拖入此窗口(无需 Rust 编译)</p>
+    <p style="font-size: 0.8em; margin-top: 1em; opacity: 0.7">
+      正式版是 .exe / .app,本预览用于提前看效果
+    </p>
+  </div>
+  <div id="content" class="markdown-body"></div>
+  <div id="error" class="error-banner" style="display:none"></div>
+
+  <script src="src/vendor/marked.min.js"></script>
+  <script src="src/vendor/highlight.min.js"></script>
+  <script src="src/vendor/katex.min.js"></script>
+  <script src="src/vendor/mermaid.min.js"></script>
+
+  <script>
+    // ===== 浏览器预览版的渲染流水线(与 src/main.js 几乎一致) =====
+    // 唯一区别:文件读取用 FileReader 而不是 Tauri IPC
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'strict',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif'
+    });
+
+    const mathExtension = {
+      name: 'math',
+      level: 'inline',
+      start(src) { return src.match(/\$\$/)?.index; },
+      tokenizer(src) {
+        const blockMatch = /^\$\$([\s\S]+?)\$\$(?:\n|$)/.exec(src);
+        if (blockMatch) {
+          return { type: 'math', raw: blockMatch[0], text: blockMatch[1].trim(), displayMode: true };
+        }
+        const inlineMatch = /^\$([^\$\n]+?)\$/.exec(src);
+        if (inlineMatch) {
+          return { type: 'math', raw: inlineMatch[0], text: inlineMatch[1].trim(), displayMode: false };
+        }
+      },
+      renderer(token) {
+        const cls = token.displayMode ? 'math-display' : 'math-inline';
+        return `<div class="${cls}">${escapeHtml(token.text)}</div>`;
+      }
+    };
+
+    marked.use({ extensions: [mathExtension] });
+
+    marked.setOptions({
+      gfm: true,
+      breaks: false,
+      highlight: function(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          try { return hljs.highlight(code, { language: lang }).value; } catch (e) { return code; }
+        }
+        try { return hljs.highlightAuto(code).value; } catch (e) { return code; }
+      }
+    });
+
+    // 拖放
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      document.body.addEventListener(eventName, e => e.preventDefault());
+      document.body.addEventListener(eventName, e => e.stopPropagation());
+    });
+
+    document.body.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      hideError();
+      const file = e.dataTransfer.files[0];
+      if (!file) { showError('没有检测到文件'); return; }
+      if (!file.name.toLowerCase().endsWith('.md') && !file.name.toLowerCase().endsWith('.markdown')) {
+        showError('请拖入 .md 或 .markdown 文件');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showError(`文件较大 (${(file.size / 1024 / 1024).toFixed(1)} MB),渲染可能较慢`);
+      }
+      try {
+        const content = await readFileAsText(file);
+        renderContent(content);
+      } catch (err) {
+        showError(`读取失败: ${err}`);
+      }
+    });
+
+    // FileReader 包装
+    function readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(file, 'UTF-8');
+      });
+    }
+
+    // 渲染流水线
+    function renderContent(text) {
+      document.getElementById('placeholder').style.display = 'none';
+      const mermaidBlocks = [];
+      const processedText = text.replace(/```mermaid\n([\s\S]+?)\n```/g, (match, code) => {
+        const id = 'mermaid-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+        mermaidBlocks.push({ id, code: code.trim() });
+        return `<div class="mermaid-placeholder" id="${id}">${escapeHtml(code.trim())}</div>`;
+      });
+      const html = marked.parse(processedText);
+      document.getElementById('content').innerHTML = html;
+      document.querySelectorAll('pre code').forEach(block => {
+        if (!block.classList.contains('hljs')) hljs.highlightElement(block);
+      });
+      renderMath();
+      renderMermaidBlocks(mermaidBlocks);
+    }
+
+    function renderMath() {
+      document.querySelectorAll('#content .math-display').forEach(el => {
+        try { katex.render(el.textContent, el, { displayMode: true, throwOnError: false }); }
+        catch (e) { console.error('KaTeX display error:', e); }
+      });
+      document.querySelectorAll('#content .math-inline').forEach(el => {
+        try { katex.render(el.textContent, el, { displayMode: false, throwOnError: false }); }
+        catch (e) { console.error('KaTeX inline error:', e); }
+      });
+    }
+
+    async function renderMermaidBlocks(blocks) {
+      for (const { id, code } of blocks) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        try {
+          const { svg } = await mermaid.render(id + '-svg', code);
+          el.innerHTML = svg;
+          el.classList.remove('mermaid-placeholder');
+          el.classList.add('mermaid-rendered');
+        } catch (e) {
+          el.innerHTML = `<pre class="mermaid-error">Mermaid 渲染失败:\n${escapeHtml(String(e))}</pre>`;
+        }
+      }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error');
+      el.textContent = msg;
+      el.style.display = 'block';
+      el.style.cursor = 'pointer';
+      el.onclick = hideError;
+    }
+    function hideError() { document.getElementById('error').style.display = 'none'; }
+    function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  </script>
+</body>
+</html>
