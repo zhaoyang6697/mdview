@@ -220,13 +220,13 @@ async function renderMermaidBlocks(blocks) {
 function showError(msg) {
   const el = document.getElementById('error');
   el.textContent = msg;
-  el.style.display = 'block';
+  el.classList.add('show');
   el.style.cursor = 'pointer';
   el.onclick = hideError;
 }
 
 function hideError() {
-  document.getElementById('error').style.display = 'none';
+  document.getElementById('error').classList.remove('show');
 }
 
 // ===== 6. 工具函数 =====
