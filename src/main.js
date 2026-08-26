@@ -118,6 +118,71 @@ function readFileAsText(file) {
   });
 }
 
+// ===== 3.5 侧边栏:左侧文件列表 =====
+
+let currentDir = null; // 当前打开的文件夹
+
+// 通过 Tauri 调用 Rust 命令的封装(纯静态前端用 window.__TAURI__ 全局 API)
+async function tauriInvoke(cmd, args = {}) {
+  if (!window.__TAURI__) {
+    throw new Error('Tauri API 不可用(浏览器预览模式不支持此功能)');
+  }
+  return window.__TAURI__.core.invoke(cmd, args);
+}
+
+document.getElementById('btn-open-folder').addEventListener('click', async () => {
+  hideError();
+  try {
+    const dir = await tauriInvoke('pick_folder');
+    if (!dir) return; // 用户取消了选择
+    await loadFolder(dir);
+  } catch (err) {
+    showError(`打开文件夹失败: ${err}`);
+  }
+});
+
+async function loadFolder(dir) {
+  currentDir = dir;
+  document.getElementById('folder-path').textContent = dir;
+  const files = await tauriInvoke('list_md_files', { dir });
+  renderFileList(files);
+}
+
+function renderFileList(files) {
+  const list = document.getElementById('file-list');
+  list.innerHTML = '';
+  if (!files.length) {
+    const tip = document.createElement('div');
+    tip.className = 'empty-tip';
+    tip.textContent = '此文件夹没有 .md 文件';
+    list.appendChild(tip);
+    return;
+  }
+  files.forEach(file => {
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    item.textContent = file.name;
+    item.title = file.path;
+    item.addEventListener('click', () => {
+      // 高亮当前项
+      list.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+      item.classList.add('active');
+      openMdFile(file.path, file.name);
+    });
+    list.appendChild(item);
+  });
+}
+
+async function openMdFile(path, name) {
+  hideError();
+  try {
+    const content = await tauriInvoke('read_md_file', { path });
+    renderContent(content);
+  } catch (err) {
+    showError(`打开失败: ${name}: ${err}`);
+  }
+}
+
 // ===== 4. 渲染流水线 =====
 
 function renderContent(text) {
