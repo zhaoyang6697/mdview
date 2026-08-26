@@ -184,6 +184,7 @@ body {
   top: 0;
   left: 0;
   right: 0;
+  display: none; /* 默认隐藏,仅当加上 .show 才显示 */
   padding: 12px 20px;
   background: #d73a49;
   color: white;
@@ -192,6 +193,8 @@ body {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   text-align: center;
 }
+
+#error.show { display: block; }
 
 #error:hover { background: #cb2431; }
 
