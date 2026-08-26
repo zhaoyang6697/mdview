@@ -33,15 +33,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: 编译 exe + WebView2Loader.dll
-        working-directory: src-tauri
-        run: cargo build --release
-
       - name: 安装 tauri-cli (快速二进制)
         shell: pwsh
         run: |
           iwr -useb https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.ps1 | iex
           cargo binstall tauri-cli --no-confirm --version "2.*"
+
+      - name: 编译 exe (完整嵌入流程,生产模式)
+        working-directory: src-tauri
+        run: cargo tauri build --no-bundle
 
       - name: 打包 NSIS 安装程序 (可选)
         if: ${{ inputs.build_installer == 'true' }}
