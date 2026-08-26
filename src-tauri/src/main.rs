@@ -74,6 +74,16 @@ fn scan_md_files(dir: &Path) -> Vec<MdFile> {
 }
 
 fn main() {
+    // 解析命令行参数:双击 .md 文件打开时,Windows 会把文件路径作为参数传入
+    let mut open_path: Option<String> = None;
+    for arg in std::env::args().skip(1) {
+        let lower = arg.to_lowercase();
+        if lower.ends_with(".md") || lower.ends_with(".markdown") {
+            open_path = Some(arg);
+            break;
+        }
+    }
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![read_md_file, pick_folder, list_md_files])
         .on_window_event(|window, event| {
@@ -104,6 +114,25 @@ fn main() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("启动失败");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |app_handle, event| {
+            // 窗口就绪后,自动打开命令行传入的 .md 文件
+            if let tauri::RunEvent::Ready = event {
+                if let Some(path) = &open_path {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        let name = std::path::Path::new(path)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        let payload = FilePayload {
+                            path: path.clone(),
+                            name,
+                            content,
+                        };
+                        let _ = app_handle.emit("mdview:file", payload);
+                    }
+                }
+            }
+        });
 }
