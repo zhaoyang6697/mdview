@@ -70,59 +70,8 @@ marked.setOptions({
   }
 });
 
-// ===== 3. 拖放处理 =====
+// ===== 3. 拖放处理(Tauri 原生拖放:拖入文件夹/文件由 Rust 扫描后发事件) =====
 
-// 全局禁用浏览器默认拖放行为(否则会打开文件而不是 drop 到应用)
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-  document.body.addEventListener(eventName, e => e.preventDefault());
-  document.body.addEventListener(eventName, e => e.stopPropagation());
-});
-
-// 监听 drop
-document.body.addEventListener('drop', async (e) => {
-  e.preventDefault();
-  hideError();
-
-  const file = e.dataTransfer.files[0];
-  if (!file) {
-    showError('没有检测到文件');
-    return;
-  }
-
-  if (!file.name.toLowerCase().endsWith('.md') &&
-      !file.name.toLowerCase().endsWith('.markdown')) {
-    showError('请拖入 .md 或 .markdown 文件');
-    return;
-  }
-
-  // 大文件警告(>10MB,不阻断,只提示)
-  if (file.size > 10 * 1024 * 1024) {
-    showError(`文件较大 (${(file.size / 1024 / 1024).toFixed(1)} MB),渲染可能较慢`);
-  }
-
-  // 用 FileReader 读文件(无需 Tauri IPC,跟 preview.html 一致)
-  try {
-    const content = await readFileAsText(file);
-    renderContent(content);
-  } catch (err) {
-    showError(`读取失败: ${err.message || err}`);
-  }
-});
-
-function readFileAsText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error(reader.error?.message || '文件读取失败'));
-    reader.readAsText(file, 'UTF-8');
-  });
-}
-
-// ===== 3.5 侧边栏:左侧文件列表 =====
-
-let currentDir = null; // 当前打开的文件夹
-
-// 通过 Tauri 调用 Rust 命令的封装(纯静态前端用 window.__TAURI__ 全局 API)
 async function tauriInvoke(cmd, args = {}) {
   if (!window.__TAURI__) {
     throw new Error('Tauri API 不可用(浏览器预览模式不支持此功能)');
@@ -130,23 +79,26 @@ async function tauriInvoke(cmd, args = {}) {
   return window.__TAURI__.core.invoke(cmd, args);
 }
 
-document.getElementById('btn-open-folder').addEventListener('click', async () => {
-  hideError();
-  try {
-    const dir = await tauriInvoke('pick_folder');
-    if (!dir) return; // 用户取消了选择
-    await loadFolder(dir);
-  } catch (err) {
-    showError(`打开文件夹失败: ${err}`);
-  }
-});
+let currentDir = null; // 当前打开的文件夹
 
-async function loadFolder(dir) {
-  currentDir = dir;
-  document.getElementById('folder-path').textContent = dir;
-  const files = await tauriInvoke('list_md_files', { dir });
-  renderFileList(files);
+// 监听 Rust 端发来的事件
+async function initDropListener() {
+  if (!window.__TAURI__) return;
+  // 拖入文件夹 → 左侧列出 md 文件
+  await window.__TAURI__.event.listen('mdview:folder', (e) => {
+    const { dir, files } = e.payload;
+    currentDir = dir;
+    document.getElementById('folder-path').textContent = dir;
+    renderFileList(files);
+  });
+  // 拖入单个 .md 文件 → 直接渲染
+  await window.__TAURI__.event.listen('mdview:file', (e) => {
+    const { path, name, content } = e.payload;
+    hideError();
+    renderContent(content);
+  });
 }
+initDropListener();
 
 function renderFileList(files) {
   const list = document.getElementById('file-list');
@@ -164,7 +116,6 @@ function renderFileList(files) {
     item.textContent = file.name;
     item.title = file.path;
     item.addEventListener('click', () => {
-      // 高亮当前项
       list.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
       item.classList.add('active');
       openMdFile(file.path, file.name);
