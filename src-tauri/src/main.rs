@@ -30,6 +30,19 @@ fn read_md_file(path: String) -> Result<String, String> {
         .map_err(|e| format!("读取文件失败: {}", e))
 }
 
+// 弹出文件夹选择对话框
+#[tauri::command]
+async fn pick_folder() -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        rfd::FileDialog::new()
+            .set_title("选择 Markdown 文件夹")
+            .pick_folder()
+            .map(|p| p.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("对话框失败: {}", e))
+}
+
 // 扫描文件夹,返回所有 .md/.markdown 文件
 #[tauri::command]
 fn list_md_files(dir: String) -> Result<Vec<MdFile>, String> {
@@ -62,7 +75,7 @@ fn scan_md_files(dir: &Path) -> Vec<MdFile> {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![read_md_file, list_md_files])
+        .invoke_handler(tauri::generate_handler![read_md_file, pick_folder, list_md_files])
         .on_window_event(|window, event| {
             // 拖放处理:拖入文件夹 → 列出 md 文件;拖入 .md 文件 → 直接读取
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
