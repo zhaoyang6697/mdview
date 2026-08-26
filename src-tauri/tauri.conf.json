@@ -35,9 +35,6 @@
       "assets/icon.icns",
       "assets/icon.png"
     ],
-    "resources": [
-      "target/release/WebView2Loader.dll"
-    ],
     "category": "Productivity",
     "shortDescription": "Markdown 预览",
     "longDescription": "拖入 .md 文件即可预览,支持代码高亮、数学公式、流程图"
