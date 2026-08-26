@@ -22,14 +22,26 @@
     #sidebar-header {
       padding: 10px 12px;
       border-bottom: 1px solid #e1e4e8;
+    }
+    #btn-open-folder {
+      width: 100%;
+      padding: 8px 10px;
+      background: #2da44e;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #btn-open-folder:hover { background: #2c974b; }
+    #folder-path {
+      margin-top: 8px;
       font-size: 11px;
       color: #57606a;
       word-break: break-all;
-    }
-    #folder-path {
-      line-height: 1.4;
       max-height: 60px;
       overflow: hidden;
+      line-height: 1.4;
     }
     #file-list {
       flex: 1;
@@ -64,6 +76,7 @@
   <div id="layout">
     <aside id="sidebar">
       <div id="sidebar-header">
+        <button id="btn-open-folder">打开文件夹</button>
         <div id="folder-path">把文件夹或 .md 文件拖入窗口</div>
       </div>
       <div id="file-list"></div>
