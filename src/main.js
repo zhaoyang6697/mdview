@@ -81,6 +81,21 @@ async function tauriInvoke(cmd, args = {}) {
 
 let currentDir = null; // 当前打开的文件夹
 
+// 「打开文件夹」按钮:弹系统文件夹选择框
+document.getElementById('btn-open-folder').addEventListener('click', async () => {
+  hideError();
+  try {
+    const dir = await tauriInvoke('pick_folder');
+    if (!dir) return; // 用户取消
+    currentDir = dir;
+    document.getElementById('folder-path').textContent = dir;
+    const files = await tauriInvoke('list_md_files', { dir });
+    renderFileList(files);
+  } catch (err) {
+    showError(`打开文件夹失败: ${err}`);
+  }
+});
+
 // 监听 Rust 端发来的事件
 async function initDropListener() {
   if (!window.__TAURI__) return;
