@@ -1,9 +1,9 @@
 // 关闭 release 模式下的控制台窗口(避免后台弹出 cmd 黑窗)
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
-use tauri::Emitter;
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Serialize, Clone)]
 struct MdFile {
@@ -22,6 +22,13 @@ struct FilePayload {
     path: String,
     name: String,
     content: String,
+}
+
+// 持久化配置:记住上次文件夹 + 默认 md 文件
+#[derive(Serialize, Deserialize, Default, Clone)]
+struct AppConfig {
+    last_folder: Option<String>,
+    default_md: Option<String>,
 }
 
 #[tauri::command]
@@ -48,6 +55,54 @@ async fn pick_folder() -> Result<Option<String>, String> {
 fn list_md_files(dir: String) -> Result<Vec<MdFile>, String> {
     let files = scan_md_files(Path::new(&dir));
     Ok(files)
+}
+
+// 保存"上次打开的文件夹"
+#[tauri::command]
+fn save_last_folder(app: AppHandle, dir: String) {
+    let mut cfg = load_config(&app);
+    cfg.last_folder = Some(dir);
+    save_config(&app, &cfg);
+}
+
+// 设置/清除"默认 MD 文件"(传 null 即清除)
+#[tauri::command]
+fn set_default_md(app: AppHandle, path: Option<String>) {
+    let mut cfg = load_config(&app);
+    cfg.default_md = path;
+    save_config(&app, &cfg);
+}
+
+// 读取当前配置(前端启动恢复 + 打开默认时用)
+#[tauri::command]
+fn get_config(app: AppHandle) -> AppConfig {
+    load_config(&app)
+}
+
+// 从应用配置目录读取配置(读不到则返回默认空配置)
+fn load_config(app: &AppHandle) -> AppConfig {
+    if let Ok(dir) = app.path().app_config_dir() {
+        let p = dir.join("mdview_config.json");
+        if let Ok(s) = std::fs::read_to_string(&p) {
+            if let Ok(cfg) = serde_json::from_str::<AppConfig>(&s) {
+                return cfg;
+            }
+        }
+    }
+    AppConfig::default()
+}
+
+// 把配置写入应用配置目录
+fn save_config(app: &AppHandle, cfg: &AppConfig) {
+    if let Ok(dir) = app.path().app_config_dir() {
+        if std::fs::create_dir_all(&dir).is_err() {
+            return;
+        }
+        let p = dir.join("mdview_config.json");
+        if let Ok(s) = serde_json::to_string_pretty(cfg) {
+            let _ = std::fs::write(&p, s);
+        }
+    }
 }
 
 fn scan_md_files(dir: &Path) -> Vec<MdFile> {
@@ -85,7 +140,14 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![read_md_file, pick_folder, list_md_files])
+        .invoke_handler(tauri::generate_handler![
+            read_md_file,
+            pick_folder,
+            list_md_files,
+            save_last_folder,
+            set_default_md,
+            get_config
+        ])
         .on_window_event(|window, event| {
             // 拖放处理:拖入文件夹 → 列出 md 文件;拖入 .md 文件 → 直接读取
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {

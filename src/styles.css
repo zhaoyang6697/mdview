@@ -253,3 +253,31 @@ body {
 ::-webkit-scrollbar-track { background: #f6f8fa; }
 ::-webkit-scrollbar-thumb { background: #c8c8c8; border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
+/* ===== 顶部工具栏 ===== */
+#toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f6f8fa;
+  border-bottom: 1px solid #e1e4e8;
+}
+#toolbar button {
+  padding: 6px 12px;
+  background: #0969da;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#toolbar button:hover { background: #0860ca; }
+.status-text {
+  font-size: 12px;
+  color: #1a7f37;
+  word-break: break-all;
+}

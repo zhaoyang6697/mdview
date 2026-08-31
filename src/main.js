@@ -80,6 +80,16 @@ async function tauriInvoke(cmd, args = {}) {
 }
 
 let currentDir = null; // 当前打开的文件夹
+let currentFile = null; // 当前打开的 md 文件 { path, name }
+
+// 记录上次打开的文件夹(失败静默,不影响主流程)
+async function saveLastFolder(dir) {
+  try {
+    await tauriInvoke('save_last_folder', { dir });
+  } catch (e) {
+    console.warn('保存上次文件夹失败:', e);
+  }
+}
 
 // 「打开文件夹」按钮:弹系统文件夹选择框
 document.getElementById('btn-open-folder').addEventListener('click', async () => {
@@ -91,6 +101,7 @@ document.getElementById('btn-open-folder').addEventListener('click', async () =>
     document.getElementById('folder-path').textContent = dir;
     const files = await tauriInvoke('list_md_files', { dir });
     renderFileList(files);
+    saveLastFolder(dir);
   } catch (err) {
     showError(`打开文件夹失败: ${err}`);
   }
@@ -105,6 +116,7 @@ async function initDropListener() {
     currentDir = dir;
     document.getElementById('folder-path').textContent = dir;
     renderFileList(files);
+    saveLastFolder(dir);
   });
   // 拖入单个 .md 文件 → 直接渲染
   await window.__TAURI__.event.listen('mdview:file', (e) => {
@@ -113,7 +125,65 @@ async function initDropListener() {
     renderContent(content);
   });
 }
+// 工具栏:设为默认 MD / 打开默认 MD
+function initToolbar() {
+  if (!window.__TAURI__) return;
+
+  // 设为默认 MD:把当前打开的文件写入配置
+  document.getElementById('btn-set-default').addEventListener('click', async () => {
+    if (!currentFile) {
+      showError('请先打开一个 Markdown 文件再设为默认');
+      return;
+    }
+    try {
+      await tauriInvoke('set_default_md', { path: currentFile.path });
+      showStatus(`已设为默认: ${currentFile.name}`);
+    } catch (e) {
+      showError(`设置默认失败: ${e}`);
+    }
+  });
+
+  // 打开默认 MD:读取并渲染已设置的默认文件
+  document.getElementById('btn-open-default').addEventListener('click', async () => {
+    try {
+      const cfg = await tauriInvoke('get_config');
+      if (!cfg || !cfg.default_md) {
+        showError('尚未设置默认 MD 文件（先打开一个文件点“设为默认 MD”）');
+        return;
+      }
+      const path = cfg.default_md;
+      const name = path.split(/[\\/]/).pop();
+      const content = await tauriInvoke('read_md_file', { path });
+      currentFile = { path, name };
+      currentDir = null;
+      document.getElementById('folder-path').textContent = '(默认文件) ' + path;
+      hideError();
+      renderContent(content);
+    } catch (e) {
+      showError(`打开默认失败: ${e}`);
+    }
+  });
+}
+
+// 启动恢复:自动打开上次文件夹(只列出文件,不自动打开任何 md)
+async function initRestore() {
+  if (!window.__TAURI__) return;
+  try {
+    const cfg = await tauriInvoke('get_config');
+    if (cfg && cfg.last_folder) {
+      currentDir = cfg.last_folder;
+      document.getElementById('folder-path').textContent = currentDir;
+      const files = await tauriInvoke('list_md_files', { dir: currentDir });
+      renderFileList(files);
+    }
+  } catch (e) {
+    console.warn('恢复上次文件夹失败:', e);
+  }
+}
+
 initDropListener();
+initToolbar();
+initRestore();
 
 function renderFileList(files) {
   const list = document.getElementById('file-list');
@@ -143,6 +213,7 @@ async function openMdFile(path, name) {
   hideError();
   try {
     const content = await tauriInvoke('read_md_file', { path });
+    currentFile = { path, name };
     renderContent(content);
   } catch (err) {
     showError(`打开失败: ${name}: ${err}`);
@@ -227,6 +298,16 @@ function showError(msg) {
 
 function hideError() {
   document.getElementById('error').classList.remove('show');
+}
+
+// 状态提示(临时,3 秒后自动消失)
+let statusTimer = null;
+function showStatus(msg) {
+  const el = document.getElementById('status');
+  if (!el) return;
+  el.textContent = msg;
+  if (statusTimer) clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => { el.textContent = ''; }, 3000);
 }
 
 // ===== 6. 工具函数 =====
