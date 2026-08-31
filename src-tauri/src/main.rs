@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Serialize, Clone)]
@@ -138,15 +139,20 @@ fn main() {
             break;
         }
     }
+    // 用共享状态保存待打开文件,交给前端在加载完成后主动拉取,
+    // 避免“启动期 emit 事件、前端监听器尚未注册”导致的竞态(消息丢失、双击不显示)
+    let pending = Arc::new(Mutex::new(open_path));
 
     tauri::Builder::default()
+        .manage(pending)
         .invoke_handler(tauri::generate_handler![
             read_md_file,
             pick_folder,
             list_md_files,
             save_last_folder,
             set_default_md,
-            get_config
+            get_config,
+            get_pending_file,
         ])
         .on_window_event(|window, event| {
             // 拖放处理:拖入文件夹 → 列出 md 文件;拖入 .md 文件 → 直接读取
@@ -178,23 +184,26 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(move |app_handle, event| {
-            // 窗口就绪后,自动打开命令行传入的 .md 文件
-            if let tauri::RunEvent::Ready = event {
-                if let Some(path) = &open_path {
-                    if let Ok(content) = std::fs::read_to_string(path) {
-                        let name = std::path::Path::new(path)
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default();
-                        let payload = FilePayload {
-                            path: path.clone(),
-                            name,
-                            content,
-                        };
-                        let _ = app_handle.emit("mdview:file", payload);
-                    }
-                }
-            }
-        });
+        .run(|_app_handle, _event| {});
+}
+
+// 前端加载完成后主动拉取“双击/命令行传入的 .md 文件”
+// 读取一次后清空共享状态,保证只打开一次、不依赖启动期事件
+#[tauri::command]
+fn get_pending_file(state: tauri::State<Arc<Mutex<Option<String>>>>) -> Option<FilePayload> {
+    let mut guard = state.lock().unwrap();
+    if let Some(path) = guard.take() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let name = std::path::Path::new(&path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            return Some(FilePayload {
+                path,
+                name,
+                content,
+            });
+        }
+    }
+    None
 }

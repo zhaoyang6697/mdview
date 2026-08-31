@@ -184,6 +184,24 @@ async function initRestore() {
 initDropListener();
 initToolbar();
 initRestore();
+initOpenFile();
+
+// 启动打开:若通过文件关联/命令行传入了 .md,加载完成后主动拉取并渲染
+// (原先在 Rust Ready 事件里 emit 会因前端监听器尚未注册而丢失,改为前端主动拉取)
+async function initOpenFile() {
+  if (!window.__TAURI__) return;
+  try {
+    const payload = await tauriInvoke('get_pending_file');
+    if (payload && payload.content) {
+      currentFile = { path: payload.path, name: payload.name };
+      document.getElementById('folder-path').textContent = payload.path;
+      hideError();
+      renderContent(payload.content);
+    }
+  } catch (e) {
+    console.warn('启动打开文件失败:', e);
+  }
+}
 
 function renderFileList(files) {
   const list = document.getElementById('file-list');
